@@ -1,6 +1,6 @@
 #include <vector>
 #include <iostream>
-#include <pthread.h>
+#include <omp.h>
 
 // Куприхин Дима, БПИ199, Вариант 14
 // Задание: определить такие индексы, для которых a[i] и b[i] не имееют общих
@@ -10,33 +10,9 @@
 
 // Для вычисления НОДa будем использовать алгоритм Евклида. Результаты будем
 // сохранять в вектор, в котором значение элемента 1 значит 
-// взаимнопростость чисел с этим индексом, а 0 - НОД > 1. Каждый поток 
-// записывает и читает из своего отдельной области, поэтому нам не надо 
-// использовать мьютексы.
-
-// Класс, хранящий ссылки на два массива, значения начала и конца 
-// обрабатываемого отрезка [start; end), ссылку на вектор с результатом 
-// программы. Для каждого потока сконструирован специальный экземпляр блока с 
-// соответствующими значениями концов обрабатываемого интервала.
-class ArraysBlock {
- public:
-    ArraysBlock(std::vector<int>& first, std::vector<int>& second, int start,
-                int end, std::vector<int>& numbers) : 
-            firstArray(first),
-            secondArray(second),
-            start(start),
-            end(end),
-            coprimeNumbers(numbers) {}
-
-    std::vector<int>& firstArray;
-    std::vector<int>& secondArray;
-    int start;
-    int end;
-    std::vector<int>& coprimeNumbers;
-};
+// взаимнопростость чисел с этим индексом, а 0 - НОД > 1.
 
 void inputIntVector(std::vector<int>& vector) {
-    std::cout << "Input " << vector.size() << " elements of vector" << std::endl;
     for(int i = 0; i < vector.size(); ++i){
         std::cin >> vector[i];
     }
@@ -49,20 +25,6 @@ int gcd(int a, int b){
     return gcd(b % a, a);
 }
 
-// Функция, которую выполняют потоки. Каждый поток обрабатывает свой отдельный
-// участок массивов и записывает результат в общий вектор.
-void* countCoprime(void* args) {
-    ArraysBlock* block = (ArraysBlock*)args;
-    // Проходимся по всем индексам этого блока.
-    for(int i = block->start; i < block->end; ++i){
-        int g = gcd(block->firstArray[i], block->secondArray[i]);
-        if(g == 1){
-            block->coprimeNumbers[i] = 1;
-        }
-    }
-    return 0;
-}
-
 int main() {
     
     std::ios_base::sync_with_stdio(0);
@@ -71,8 +33,11 @@ int main() {
 
     // Вводим размеры массивов и количество потоков.
     int arraySize, threadsNumber;
-    std::cout << "Input array size and number of threads" << std::endl;
+    // Утанавливаем false, если не хотим выводить значения индексов 
+    // взаимнопростых чисел.
+    bool isIndexesOutputEnable = true;
     std::cin >> arraySize >> threadsNumber;
+    std::cin >> isIndexesOutputEnable;
 
     // Инициализируем и заполняем массивы.
     // потоков и результата.
@@ -80,27 +45,37 @@ int main() {
     std::vector<int> secondArray(arraySize);
     inputIntVector(firstArray);
     inputIntVector(secondArray);
-    std::vector<int> result(arraySize, 0);
-    std::vector<pthread_t> threads(threadsNumber);
+    std::vector<char> result(arraySize, 0);
+    
+    // Массив, хранящий номера потоков, обработовших итерации цикла.
+    std::vector<char> threadIndex(arraySize, -1);
 
-    // Инициализирум блоки. Каждому блоку выделяем равные(с точностью 
-    // целочисленного деления) куски, которые будет обрабатывать 
-    // соответствующий поток.
-    std::vector<ArraysBlock*> blocks(threadsNumber);
-    for(int i = 0; i < threadsNumber; ++i){
-        blocks[i] = new ArraysBlock(firstArray, secondArray, 
-                        arraySize / threadsNumber * i,
-                        arraySize / threadsNumber * (i + 1), result);
+    // Устанавливаем количество потоков из входных данных.
+    omp_set_num_threads(threadsNumber);
+
+    // Выполняем параллельлное вычисление НОД'ов чисел массивов.
+    #pragma omp parallel for
+    for(int i = 0; i < arraySize; ++i) {
+        // Добавляем к текущему потоку одну итерацию.
+        threadIndex[i] = omp_get_thread_num();
+        if(gcd(firstArray[i], secondArray[i]) == 1) {
+            result[i] = 1;
+        }
+    }
+    
+
+    // Массив, хранящий количество проихведенных итераций каждым потоком.
+    std::vector<int> threadIterations(threadsNumber, 0);
+    // Считаем количество итераций для каждого потока.
+    for(int i = 0; i < arraySize; ++i) {
+        ++threadIterations[threadIndex[i]];
+    }
+    // Выводим количество итераций каждого потока.
+    for(int i = 0; i < threadIterations.size(); ++i) {
+        std::cout << "Thread " << i << " processed " << threadIterations[i] <<
+                    " numbers" << std::endl;
     }
 
-    // Запускаем потоки и ждем их завершения.
-    for(int i = 0; i < threadsNumber; ++i){
-        pthread_create(&threads[i], NULL, countCoprime, blocks[i]);
-    }
-    for(int i = 0; i < threadsNumber; ++i){
-        pthread_join(threads[i], NULL);
-    }
-  
     // Считаем количество взаимнопростых чисел.
     int resultSize = 0;
     for(int i = 0; i < result.size(); ++i) {
@@ -110,16 +85,14 @@ int main() {
     }
     // Выводим результат.
     std::cout << "There are " << resultSize << 
-            " coprime numbers in the arrays:\n";
-    for(int i = 0; i < result.size(); ++i) {
-        if(result[i]) {
-            std::cout << i << " ";
+            " coprime numbers in the arrays" << std::endl;
+    if(isIndexesOutputEnable) {
+        for(int i = 0; i < result.size(); ++i) {
+            if(result[i]) {
+                std::cout << i << " ";
+            }
         }
     }
-
-    // Освобождаем выделенную в куче память.
-    for(int i = 0; i < blocks.size(); ++i)
-        delete blocks[i];
 
     return 0;
 }

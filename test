@@ -1,10 +1,10 @@
 #!/bin/bash
-g++ -o hw4 hw4.cpp -lpthread
-printf "1 thread:"
-time ./hw4 < inputs/input1.txt > outputs/output1.txt
-printf "2 threads:"
-time ./hw4 < inputs/input2.txt > outputs/output2.txt
-printf "4 threads:"
-time ./hw4 < inputs/input4.txt > outputs/output4.txt
-printf "8 threads:"
-time ./hw4 < inputs/input8.txt > outputs/output8.txt
+g++ -o hw4 hw4.cpp -fopenmp
+printf "1 thread:\n"
+time ./hw4 < inputs/input1.txt
+printf "\n2 threads:\n"
+time ./hw4 < inputs/input2.txt
+printf "\n4 threads:\n"
+time ./hw4 < inputs/input4.txt
+printf "\n8 threads:\n"
+time ./hw4 < inputs/input8.txt
